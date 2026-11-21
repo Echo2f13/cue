@@ -194,7 +194,10 @@ function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.se
 
 function getWhisperRuntime() {
   return locateWhisperRuntime({
-    isPackaged: app.isPackaged,
+    // Not app.isPackaged alone: the postinstall rename of electron.exe makes a
+    // source run (`electron .`) report packaged too. A source run has
+    // process.defaultApp set, so the runtime is looked up in the checkout.
+    isPackaged: app.isPackaged && !process.defaultApp,
     resourcesPath: process.resourcesPath,
     appPath: app.getAppPath(),
     platform: process.platform,

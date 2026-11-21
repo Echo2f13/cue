@@ -163,6 +163,15 @@ function makeLogger() {
 }
 
 /**
+ * True only for the installed app. app.isPackaged alone is not enough: Electron decides it from the
+ * executable's name, and cue's postinstall renames electron.exe (scripts/rename-electron.js), so a
+ * source run (`electron .`) also says isPackaged. A source run always has process.defaultApp set.
+ */
+function isInstalled(app) {
+  return !!app.isPackaged && !process.defaultApp;
+}
+
+/**
  * Starts the updater. Returns { testHook, checkNow, menuItem }. `testHook` is true only in a test build:
  * the caller must then start nothing else (the hook exits the app).
  * `show(options)`: optional. Shows one message (the options of Electron's dialog.showMessageBox: type,
@@ -191,7 +200,7 @@ function startUpdates({ slug, appName, menu = true, show } = {}) {
   autoUpdater.disableDifferentialDownload = true; // the feed lists whole files only; no .blockmap to serve
   autoUpdater.disableWebInstaller = true;
   let verified = null;
-  if (app.isPackaged) {
+  if (isInstalled(app)) {
     try { ensureUpdateConfig(app, autoUpdater, { slug, url }); } catch (e) { autoUpdater.logger.warn(`cannot write the update config: ${e.message}`); }
   }
   autoUpdater.setFeedURL(feedOptions({ slug, url, onVerified: (v) => { verified = v; autoUpdater.logger.info(`${v.feed} ${v.version}: signature OK (key ${v.keyId})`); } }));
@@ -203,7 +212,7 @@ function startUpdates({ slug, appName, menu = true, show } = {}) {
 
   const ui = updateUI({ app, autoUpdater, appName, show });
   if (menu) setMenuWithUpdates(appName, ui.menuItem());
-  if (app.isPackaged && process.env.PUBLIK_UPDATES !== '0') {
+  if (isInstalled(app) && process.env.PUBLIK_UPDATES !== '0') {
     ui.check(false);
     setInterval(() => ui.check(false), CHECK_EVERY_MS);
   }
@@ -290,7 +299,7 @@ function updateUI({ app, autoUpdater, appName, show: present }) {
       if (state === 'downloading') {
         return show({ type: 'info', buttons: ['OK'], title: 'Update in progress', message: 'An update is downloading.', detail: `${appName} asks you to restart when it is ready.` });
       }
-      if (!app.isPackaged) {
+      if (!isInstalled(app)) {
         return show({ type: 'info', buttons: ['OK'], title: 'Updates', message: 'Updates work only in the installed app.' });
       }
       manual = true;
@@ -381,4 +390,4 @@ function runTestHook({ app, autoUpdater, url, getVerified }) {
   autoUpdater.checkForUpdates().catch(() => {}); // the 'error' event has it
 }
 
-module.exports = { startUpdates, PublikSignedFeedProvider, checkSignedFeed, feedOptions, FEED_BASE };
+module.exports = { startUpdates, isInstalled, PublikSignedFeedProvider, checkSignedFeed, feedOptions, FEED_BASE };
