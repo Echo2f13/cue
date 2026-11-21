@@ -28,8 +28,10 @@ const { startUpdates } = require('./publik-updater.cjs');
 // What this build can do: `available` is true when the build carries a publik
 // app token (release.yml bakes it into src/publik-build.json; PUBLIK_APP_TOKEN
 // in the environment also counts) or PUBLIK_API_KEY is set for development.
+// CUE_SKIP_PUBLIK=1 turns publik off even in a build that has a token.
+// Without publik, cue skips the sign-in gate and runs on your own keys.
 const publikBuild = {
-  available: publikModule.hasAppToken() || !!process.env.PUBLIK_API_KEY,
+  available: process.env.CUE_SKIP_PUBLIK !== '1' && (publikModule.hasAppToken() || !!process.env.PUBLIK_API_KEY),
   baseUrl: publikModule.DEFAULT_BASE_URL,
   disclosureVersion: 1
 };
@@ -1957,16 +1959,24 @@ app.whenReady().then(async () => {
   // starts usage telemetry: app_opened now, active_session every 30 minutes,
   // counts only; DO_NOT_TRACK=1 turns it off. PUBLIK_SELF_TEST=1 prints the
   // self-test line and exits inside it. Closing the gate window quits cue.
-  const gateUI = electronGateUI({ appName: 'cue', width: 480, height: 380 });
-  let gate = null;
-  try {
-    gate = await publikModule.ensureSignedIn(gateUI);
-  } catch (e) {
-    recordEvent({ level: 'error', event: 'publik_gate_failed', msg: e.message, frame: 'whenReady', context: {} });
+  //
+  // A build without publik (a source checkout with no PUBLIK_APP_TOKEN, or
+  // CUE_SKIP_PUBLIK=1) skips all of this. There is no gate window, no call to
+  // publik and no usage telemetry, and cue runs on the keys in Settings. Before
+  // this, such a build could never mint a key and the gate showed an error and
+  // Retry forever.
+  if (publikBuild.available) {
+    const gateUI = electronGateUI({ appName: 'cue', width: 480, height: 380 });
+    let gate = null;
+    try {
+      gate = await publikModule.ensureSignedIn(gateUI);
+    } catch (e) {
+      recordEvent({ level: 'error', event: 'publik_gate_failed', msg: e.message, frame: 'whenReady', context: {} });
+    }
+    gateUI.close();
+    if (!gate) { app.quit(); return; }
+    publikApplyGate(gate);
   }
-  gateUI.close();
-  if (!gate) { app.quit(); return; }
-  publikApplyGate(gate);
 
   if (isMac) {
     const allGranted = await requestPermissions();
